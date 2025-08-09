@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fraud Detection System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8" x-data="fraudDetectionApp()">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-gray-900 mb-2">🛡️ Fraud Detection System</h1>
+            <p class="text-gray-600">ML-powered credit card fraud detection using RandomForest, LightGBM, and XGBoost</p>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <div class="mb-8">
+            <nav class="flex space-x-4 border-b border-gray-200">
+                <button @click="activeTab = 'training'" 
+                        :class="activeTab === 'training' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-2 px-4 border-b-2 font-medium text-sm transition-colors">
+                    Model Training
+                </button>
+                <button @click="activeTab = 'prediction'" 
+                        :class="activeTab === 'prediction' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-2 px-4 border-b-2 font-medium text-sm transition-colors">
+                    Fraud Prediction
+                </button>
+                <button @click="activeTab = 'metrics'" 
+                        :class="activeTab === 'metrics' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-2 px-4 border-b-2 font-medium text-sm transition-colors">
+                    Model Metrics
+                </button>
+                <button @click="activeTab = 'info'" 
+                        :class="activeTab === 'info' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-2 px-4 border-b-2 font-medium text-sm transition-colors">
+                    System Info
+                </button>
+            </nav>
+        </div>
+
+        <!-- Training Tab -->
+        <div x-show="activeTab === 'training'" class="space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-2xl font-bold mb-4">Train Models</h2>
+                
+                <form @submit.prevent="trainModels" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Train Size</label>
+                            <input type="number" x-model="trainingConfig.train_size" 
+                                   min="0.5" max="0.7" step="0.05"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">50-70% for training</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Validation Size</label>
+                            <input type="number" x-model="trainingConfig.val_size" 
+                                   min="0.15" max="0.25" step="0.05"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">15-25% for validation</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Test Size</label>
+                            <input type="number" x-model="trainingConfig.test_size" 
+                                   min="0.15" max="0.25" step="0.05"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">15-25% for testing</p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Use SMOTE</label>
+                            <select x-model="trainingConfig.use_smote" 
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="true">Yes (Recommended)</option>
+                                <option value="false">No</option>
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">Handle imbalanced data</p>
+                        </div>
+                        <div x-show="trainingConfig.use_smote === 'true'">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">SMOTE Strategy</label>
+                            <select x-model="trainingConfig.smote_strategy" 
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="auto">Auto (Recommended)</option>
+                                <option value="minority">Minority Only</option>
+                                <option value="all">All Classes</option>
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">Resampling strategy</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Random State</label>
+                            <input type="number" x-model="trainingConfig.random_state"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">For reproducibility</p>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" :disabled="trainingStatus.status === 'training'"
+                            class="w-full md:w-auto px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+                        <span x-show="trainingStatus.status !== 'training'">🚀 Start Training</span>
+                        <span x-show="trainingStatus.status === 'training'">⏳ Training...</span>
+                    </button>
+                </form>
+
+                <!-- Training Progress -->
+                <div x-show="trainingStatus.status === 'training'" class="mt-6">
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h3 class="font-medium text-blue-900 mb-2">Training in Progress</h3>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
+                            <div class="bg-blue-600 h-2 rounded-full transition-all duration-500" 
+                                 :style="`width: ${trainingStatus.progress}%`"></div>
+                        </div>
+                        <p class="text-sm text-blue-700" x-text="trainingStatus.message"></p>
+                    </div>
+                </div>
+
+                <!-- Training Results -->
+                <div x-show="trainingStatus.status === 'completed'" class="mt-6">
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <h3 class="font-medium text-green-900 mb-2">✅ Training Completed</h3>
+                        <p class="text-sm text-green-700" x-text="trainingStatus.message"></p>
+                        <div x-show="trainingStatus.best_model" class="mt-2">
+                            <span class="text-sm font-medium text-green-800">Best Model: </span>
+                            <span class="text-sm text-green-700" x-text="trainingStatus.best_model"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Training Error -->
+                <div x-show="trainingStatus.status === 'failed'" class="mt-6">
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <h3 class="font-medium text-red-900 mb-2">❌ Training Failed</h3>
+                        <p class="text-sm text-red-700" x-text="trainingStatus.message"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Prediction Tab -->
+        <div x-show="activeTab === 'prediction'" class="space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-2xl font-bold mb-4">Predict Fraud</h2>
+                
+                <form @submit.prevent="predictFraud" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Transaction ID</label>
+                            <input type="text" x-model="transactionData.TransactionID" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Customer ID</label>
+                            <input type="text" x-model="transactionData.CustomerID" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Amount ($)</label>
+                            <input type="number" x-model="transactionData.Amount" min="0" step="0.01" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Merchant Category</label>
+                            <select x-model="transactionData.MerchantCategory" required
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Select Category</option>
+                                <option value="Electronics">Electronics</option>
+                                <option value="Grocery">Grocery</option>
+                                <option value="Jewelry">Jewelry</option>
+                                <option value="Gas Station">Gas Station</option>
+                                <option value="Restaurant">Restaurant</option>
+                                <option value="Pharmacy">Pharmacy</option>
+                                <option value="Travel">Travel</option>
+                                <option value="Coffee Shop">Coffee Shop</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Transaction Time</label>
+                            <input type="datetime-local" x-model="transactionData.TransactionTime" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                            <input type="text" x-model="transactionData.Location" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
+                            <select x-model="transactionData.PaymentMethod" required
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Select Method</option>
+                                <option value="Credit Card">Credit Card</option>
+                                <option value="Debit Card">Debit Card</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Account Age (days)</label>
+                            <input type="number" x-model="transactionData.AccountAge" min="0" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Previous Transactions</label>
+                            <input type="number" x-model="transactionData.PreviousTransactions" min="0" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Custom Threshold (optional)</label>
+                            <input type="number" x-model="predictionThreshold" min="0" max="1" step="0.01" placeholder="Auto"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    
+                    <button type="submit" :disabled="predicting"
+                            class="w-full md:w-auto px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+                        <span x-show="!predicting">🔍 Predict Fraud</span>
+                        <span x-show="predicting">⏳ Predicting...</span>
+                    </button>
+                </form>
+
+                <!-- Prediction Results -->
+                <div x-show="predictionResult" class="mt-6">
+                    <div class="border rounded-lg p-4"
+                         :class="predictionResult?.predictions?.[0]?.is_fraud ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'">
+                        <h3 class="font-medium mb-2"
+                            :class="predictionResult?.predictions?.[0]?.is_fraud ? 'text-red-900' : 'text-green-900'">
+                            <span x-show="predictionResult?.predictions?.[0]?.is_fraud">🚨 FRAUD DETECTED</span>
+                            <span x-show="!predictionResult?.predictions?.[0]?.is_fraud">✅ LEGITIMATE TRANSACTION</span>
+                        </h3>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div>
+                                <span class="font-medium">Fraud Probability:</span>
+                                <span x-text="(predictionResult?.predictions?.[0]?.fraud_probability * 100).toFixed(2) + '%'"></span>
+                            </div>
+                            <div>
+                                <span class="font-medium">Risk Level:</span>
+                                <span x-text="predictionResult?.predictions?.[0]?.risk_level" class="capitalize"></span>
+                            </div>
+                            <div>
+                                <span class="font-medium">Model Used:</span>
+                                <span x-text="predictionResult?.model_used"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Tab -->
+        <div x-show="activeTab === 'metrics'" class="space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Model Performance Metrics</h2>
+                    <button @click="loadMetrics" 
+                            class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                        🔄 Refresh
+                    </button>
+                </div>
+                
+                <div x-show="metrics" class="space-y-6">
+                    <!-- Model Comparison -->
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PR AUC</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ROC AUC</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">F1 Score</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precision</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recall</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <template x-for="[model, metric] in Object.entries(metrics?.metrics || {})" :key="model">
+                                    <tr :class="metrics.best_model === model ? 'bg-green-50' : ''">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span x-text="model" class="font-medium"></span>
+                                            <span x-show="metrics.best_model === model" class="ml-2 text-green-600">👑</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="metric.pr_auc.toFixed(4)"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="metric.roc_auc.toFixed(4)"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="metric.f1_score.toFixed(4)"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="metric.precision.toFixed(4)"></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="metric.recall.toFixed(4)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Feature Importance -->
+                    <div x-show="featureImportance">
+                        <h3 class="text-lg font-bold mb-4">Feature Importance (Best Model)</h3>
+                        <div class="max-h-64 overflow-y-auto">
+                            <template x-for="[feature, importance] in Object.entries(featureImportance?.feature_importance?.[featureImportance?.best_model] || {})" :key="feature">
+                                <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                    <span class="text-sm text-gray-700" x-text="feature"></span>
+                                    <div class="flex items-center space-x-2">
+                                        <div class="w-20 bg-gray-200 rounded-full h-2">
+                                            <div class="bg-blue-600 h-2 rounded-full" :style="`width: ${(importance * 100)}%`"></div>
+                                        </div>
+                                        <span class="text-xs text-gray-500" x-text="importance.toFixed(4)"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="!metrics" class="text-center text-gray-500 py-8">
+                    No metrics available. Train a model first.
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Tab -->
+        <div x-show="activeTab === 'info'" class="space-y-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-2xl font-bold mb-4">System Information</h2>
+                
+                <div x-show="systemInfo" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-medium text-gray-900 mb-2">Available Models</h3>
+                        <ul class="space-y-1">
+                            <template x-for="model in systemInfo.available_models" :key="model">
+                                <li class="text-sm text-gray-600" x-text="model"></li>
+                            </template>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <h3 class="font-medium text-gray-900 mb-2">Current Status</h3>
+                        <div class="space-y-1 text-sm">
+                            <div>
+                                <span class="text-gray-600">Best Model:</span>
+                                <span x-text="systemInfo.best_model || 'Not trained'"></span>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Last Trained:</span>
+                                <span x-text="systemInfo.last_trained || 'Never'"></span>
+                            </div>
+                            <div>
+                                <span class="text-gray-600">Features:</span>
+                                <span x-text="systemInfo.feature_count || 'Unknown'"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button @click="loadSystemInfo" 
+                        class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                    🔄 Refresh Info
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function fraudDetectionApp() {
+            return {
+                activeTab: 'training',
+                
+                // Training
+                trainingConfig: {
+                    train_size: 0.6,
+                    val_size: 0.2,
+                    test_size: 0.2,
+                    use_smote: 'true',
+                    smote_strategy: 'auto',
+                    random_state: 42
+                },
+                trainingStatus: {
+                    status: 'idle',
+                    progress: 0,
+                    message: ''
+                },
+                
+                // Prediction
+                transactionData: {
+                    TransactionID: 'TXN' + Date.now(),
+                    CustomerID: 'CUST' + Math.floor(Math.random() * 100000),
+                    Amount: 250.75,
+                    MerchantCategory: 'Electronics',
+                    TransactionTime: new Date().toISOString().slice(0, 16),
+                    Location: 'New York',
+                    PaymentMethod: 'Credit Card',
+                    AccountAge: 365,
+                    PreviousTransactions: 25
+                },
+                predictionThreshold: null,
+                predicting: false,
+                predictionResult: null,
+                
+                // Metrics
+                metrics: null,
+                featureImportance: null,
+                
+                // System Info
+                systemInfo: null,
+
+                init() {
+                    this.loadSystemInfo();
+                    this.checkTrainingStatus();
+                },
+
+                async trainModels() {
+                    try {
+                        // Validate split sizes sum to 1.0
+                        const totalSize = parseFloat(this.trainingConfig.train_size) + 
+                                        parseFloat(this.trainingConfig.val_size) + 
+                                        parseFloat(this.trainingConfig.test_size);
+                        
+                        if (Math.abs(totalSize - 1.0) > 0.001) {
+                            alert(`Split sizes must sum to 1.0, got ${totalSize.toFixed(3)}`);
+                            return;
+                        }
+                        
+                        // Convert use_smote to boolean
+                        const config = {
+                            ...this.trainingConfig,
+                            train_size: parseFloat(this.trainingConfig.train_size),
+                            val_size: parseFloat(this.trainingConfig.val_size),
+                            test_size: parseFloat(this.trainingConfig.test_size),
+                            use_smote: this.trainingConfig.use_smote === 'true',
+                            random_state: parseInt(this.trainingConfig.random_state)
+                        };
+                        
+                        const response = await fetch('/train', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(config)
+                        });
+                        
+                        if (response.ok) {
+                            this.trainingStatus = { status: 'training', progress: 0, message: 'Starting training with imbalanced data handling...' };
+                            this.pollTrainingStatus();
+                        } else {
+                            const error = await response.json();
+                            alert('Training failed: ' + error.detail);
+                        }
+                    } catch (error) {
+                        alert('Error: ' + error.message);
+                    }
+                },
+
+                async pollTrainingStatus() {
+                    const poll = async () => {
+                        try {
+                            const response = await fetch('/training-status');
+                            if (response.ok) {
+                                this.trainingStatus = await response.json();
+                                
+                                if (this.trainingStatus.status === 'training') {
+                                    setTimeout(poll, 2000);
+                                } else if (this.trainingStatus.status === 'completed') {
+                                    this.loadSystemInfo();
+                                    this.loadMetrics();
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error polling training status:', error);
+                        }
+                    };
+                    poll();
+                },
+
+                async checkTrainingStatus() {
+                    try {
+                        const response = await fetch('/training-status');
+                        if (response.ok) {
+                            this.trainingStatus = await response.json();
+                            if (this.trainingStatus.status === 'training') {
+                                this.pollTrainingStatus();
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error checking training status:', error);
+                    }
+                },
+
+                async predictFraud() {
+                    this.predicting = true;
+                    this.predictionResult = null;
+                    
+                    try {
+                        const payload = {
+                            transactions: [this.transactionData],
+                            threshold: this.predictionThreshold || null
+                        };
+                        
+                        const response = await fetch('/predict', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        
+                        if (response.ok) {
+                            this.predictionResult = await response.json();
+                            console.log('Prediction Result:', this.predictionResult);
+                            console.log('is_fraud value:', this.predictionResult?.predictions?.[0]?.is_fraud);
+                            console.log('is_fraud type:', typeof this.predictionResult?.predictions?.[0]?.is_fraud);
+                        } else {
+                            const error = await response.json();
+                            alert('Prediction failed: ' + error.detail);
+                        }
+                    } catch (error) {
+                        alert('Error: ' + error.message);
+                    } finally {
+                        this.predicting = false;
+                    }
+                },
+
+                async loadMetrics() {
+                    try {
+                        const response = await fetch('/models/metrics');
+                        if (response.ok) {
+                            this.metrics = await response.json();
+                        }
+                        
+                        const featureResponse = await fetch('/models/feature-importance');
+                        if (featureResponse.ok) {
+                            this.featureImportance = await featureResponse.json();
+                        }
+                    } catch (error) {
+                        console.error('Error loading metrics:', error);
+                    }
+                },
+
+                async loadSystemInfo() {
+                    try {
+                        const response = await fetch('/models/info');
+                        if (response.ok) {
+                            this.systemInfo = await response.json();
+                        }
+                    } catch (error) {
+                        console.error('Error loading system info:', error);
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>

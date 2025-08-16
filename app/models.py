@@ -8,7 +8,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from typing import Dict, Tuple, Any, Optional
+from typing import Dict, Optional
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     classification_report, confusion_matrix, roc_auc_score, 
@@ -82,29 +82,114 @@ class FraudDetectionModel:
         return (proba >= threshold).astype(int)
     
     def find_optimal_threshold(self, X_val: pd.DataFrame, y_val: pd.Series) -> float:
-        """Find optimal threshold using F1 score on validation set."""
-        logger.info("Finding optimal threshold", model=self.model_name)
+        """Find optimal threshold for fraud detection with business-focused approach."""
+        logger.info("Finding optimal threshold for fraud detection", model=self.model_name)
         
-        y_proba = self.predict_proba(X_val)
-        precision, recall, thresholds = precision_recall_curve(y_val, y_proba)
-        
-        # Calculate F1 scores for each threshold
-        f1_scores = 2 * (precision * recall) / (precision + recall)
-        f1_scores = np.nan_to_num(f1_scores)  # Handle division by zero
-        
-        # Find threshold that maximizes F1
-        best_idx = np.argmax(f1_scores)
-        best_threshold = thresholds[best_idx] if best_idx < len(thresholds) else 0.5
-        best_f1 = f1_scores[best_idx]
-        
-        logger.info("Optimal threshold found",
-                   threshold=best_threshold,
-                   f1_score=best_f1,
-                   precision=precision[best_idx],
-                   recall=recall[best_idx])
-        
-        self.best_threshold = best_threshold
-        return best_threshold
+        try:
+            y_proba = self.predict_proba(X_val)
+            
+            # Use a simpler approach that's more robust to array dimension issues
+            # Test a range of thresholds from 0.05 to 0.5 (fraud detection focused)
+            thresholds_to_test = np.arange(0.05, 0.51, 0.01)
+            
+            best_threshold = 0.1
+            best_score = 0
+            best_recall = 0
+            best_precision = 0
+            best_f1 = 0
+            
+            for threshold in thresholds_to_test:
+                y_pred = (y_proba >= threshold).astype(int)
+                
+                # Calculate metrics
+                tp = np.sum((y_pred == 1) & (y_val == 1))
+                fp = np.sum((y_pred == 1) & (y_val == 0))
+                fn = np.sum((y_pred == 0) & (y_val == 1))
+                
+                if tp + fp > 0:
+                    precision = tp / (tp + fp)
+                else:
+                    precision = 0
+                    
+                if tp + fn > 0:
+                    recall = tp / (tp + fn)
+                else:
+                    recall = 0
+                    
+                if precision + recall > 0:
+                    f1 = 2 * (precision * recall) / (precision + recall)
+                else:
+                    f1 = 0
+                
+                # For fraud detection, prioritize recall (catching fraud) with reasonable precision
+                # Require at least 10% precision and prioritize recall
+                if precision >= 0.10 and recall >= 0.75:
+                    # Score combines high recall with reasonable precision
+                    score = 0.7 * recall + 0.3 * precision
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_threshold = threshold
+                        best_recall = recall
+                        best_precision = precision
+                        best_f1 = f1
+            
+            # If no threshold meets our criteria, find the one with best recall at 5% precision
+            if best_score == 0:
+                for threshold in thresholds_to_test:
+                    y_pred = (y_proba >= threshold).astype(int)
+                    
+                    tp = np.sum((y_pred == 1) & (y_val == 1))
+                    fp = np.sum((y_pred == 1) & (y_val == 0))
+                    fn = np.sum((y_pred == 0) & (y_val == 1))
+                    
+                    if tp + fp > 0:
+                        precision = tp / (tp + fp)
+                    else:
+                        precision = 0
+                        
+                    if tp + fn > 0:
+                        recall = tp / (tp + fn)
+                    else:
+                        recall = 0
+                        
+                    if precision + recall > 0:
+                        f1 = 2 * (precision * recall) / (precision + recall)
+                    else:
+                        f1 = 0
+                    
+                    if precision >= 0.05 and recall > best_recall:
+                        best_recall = recall
+                        best_precision = precision
+                        best_f1 = f1
+                        best_threshold = threshold
+            
+            # Final fallback
+            if best_threshold == 0.1 and best_recall == 0:
+                best_threshold = 0.2  # Conservative default for fraud detection
+                y_pred = (y_proba >= best_threshold).astype(int)
+                tp = np.sum((y_pred == 1) & (y_val == 1))
+                fp = np.sum((y_pred == 1) & (y_val == 0))
+                fn = np.sum((y_pred == 0) & (y_val == 1))
+                
+                best_precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                best_recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                best_f1 = 2 * (best_precision * best_recall) / (best_precision + best_recall) if (best_precision + best_recall) > 0 else 0
+            
+            logger.info("Fraud detection threshold found",
+                       threshold=best_threshold,
+                       f1_score=best_f1,
+                       precision=best_precision,
+                       recall=best_recall,
+                       strategy="fraud_detection_grid_search")
+            
+            self.best_threshold = best_threshold
+            return best_threshold
+            
+        except Exception as e:
+            logger.error("Error in threshold optimization, using default", error=str(e))
+            self.best_threshold = 0.2
+            return 0.2
     
     def evaluate(self, X_test: pd.DataFrame, y_test: pd.Series, 
                 X_train: pd.DataFrame = None, y_train: pd.Series = None) -> Dict:
@@ -208,8 +293,12 @@ class FraudDetectionModel:
         return metrics
     
     def plot_curves(self, X_test: pd.DataFrame, y_test: pd.Series, save_dir: str):
-        """Generate and save ROC and PR curves."""
+        """Generate and save ROC and PR curves in organized plots subdirectory."""
         y_proba = self.predict_proba(X_test)
+        
+        # Create organized plots directory
+        plots_dir = os.path.join(save_dir, 'plots')
+        os.makedirs(plots_dir, exist_ok=True)
         
         # ROC Curve
         fpr, tpr, _ = roc_curve(y_test, y_proba)
@@ -249,25 +338,28 @@ class FraudDetectionModel:
         
         plt.tight_layout()
         
-        # Save plots
-        os.makedirs(save_dir, exist_ok=True)
-        plt.savefig(os.path.join(save_dir, f'{self.model_name.lower()}_curves.png'), dpi=150, bbox_inches='tight')
+        # Save plots in organized structure
+        plot_path = os.path.join(plots_dir, f'{self.model_name.lower()}_curves.png')
+        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
         plt.close()
         
-        logger.info("Plots saved", model=self.model_name, save_dir=save_dir)
+        logger.info("Plots saved", model=self.model_name, plot_path=plot_path)
     
     def save_model(self, save_dir: str):
-        """Save model and artifacts."""
-        os.makedirs(save_dir, exist_ok=True)
+        """Save model and artifacts in organized models subdirectory."""
+        # Create organized models directory
+        models_dir = os.path.join(save_dir, 'models')
+        os.makedirs(models_dir, exist_ok=True)
         
-        # Save model
-        model_path = os.path.join(save_dir, f'{self.model_name.lower()}_{self.run_id}.joblib')
+        # Save model with clean naming (no timestamp in filename)
+        model_path = os.path.join(models_dir, f'{self.model_name.lower()}.joblib')
         joblib.dump({
             'model': self.model,
             'best_threshold': self.best_threshold,
             'feature_importances': self.feature_importances,
             'model_name': self.model_name,
-            'run_id': self.run_id
+            'run_id': self.run_id,
+            'saved_timestamp': datetime.now().isoformat()
         }, model_path)
         
         logger.info("Model saved", model=self.model_name, path=model_path)
@@ -471,6 +563,9 @@ class ModelEnsemble:
                 # Evaluate model (always use original unmodified test set)
                 metrics = model.evaluate(X_test, y_test, X_train, y_train)
                 
+                # Store metrics in the model for ensemble weighting
+                model.metrics = metrics
+                
                 results[name] = {
                     'metrics': metrics,
                     'feature_importances': feature_importances,
@@ -518,9 +613,76 @@ class ModelEnsemble:
         return self.models[self.best_model_name]
     
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict using the best model."""
-        best_model = self.get_best_model()
-        return best_model.predict_proba(X)
+        """Predict using ensemble of all trained models."""
+        if not self.models:
+            raise ValueError("No models trained yet")
+            
+        # Get predictions from all trained models
+        predictions = []
+        weights = []
+        
+        for name, model in self.models.items():
+            if model.model is not None:  # Only use trained models
+                pred = model.predict_proba(X)
+                predictions.append(pred)
+                
+                # Weight models based on their performance (PR AUC if available)
+                if hasattr(model, 'metrics') and model.metrics and 'pr_auc' in model.metrics:
+                    weight = model.metrics['pr_auc']
+                else:
+                    weight = 1.0  # Default weight if no metrics
+                weights.append(weight)
+        
+        if not predictions:
+            raise ValueError("No trained models available for prediction")
+        
+        # Weighted average ensemble
+        predictions = np.array(predictions)
+        weights = np.array(weights)
+        weights = weights / weights.sum()  # Normalize weights
+        
+        # Weighted average of predictions
+        ensemble_pred = np.average(predictions, axis=0, weights=weights)
+        
+        return ensemble_pred
+    
+    def load_models(self, models_dir: str) -> bool:
+        """Load models from a directory."""
+        try:
+            loaded_models = {}
+            
+            # Try to load each model type
+            for model_name in self.models.keys():
+                model_file = os.path.join(models_dir, f"{model_name.lower()}.joblib")
+                
+                if os.path.exists(model_file):
+                    logger.info(f"Loading model {model_name} from {model_file}")
+                    self.models[model_name].load_model(model_file)
+                    loaded_models[model_name] = self.models[model_name]
+                else:
+                    logger.warning(f"Model file not found: {model_file}")
+            
+            if not loaded_models:
+                logger.error("No models could be loaded")
+                return False
+            
+            # Find the best model based on saved metrics or default to first loaded
+            # For now, we'll default to XGBoost if available, otherwise first loaded
+            if 'XGBoost' in loaded_models:
+                self.best_model_name = 'XGBoost'
+            elif 'LightGBM' in loaded_models:
+                self.best_model_name = 'LightGBM'
+            elif 'RandomForest' in loaded_models:
+                self.best_model_name = 'RandomForest'
+            else:
+                self.best_model_name = list(loaded_models.keys())[0]
+            
+            logger.info(f"Models loaded successfully, best model: {self.best_model_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading models: {e}")
+            return False
     
     def predict(self, X: pd.DataFrame, threshold: Optional[float] = None) -> np.ndarray:
         """Make predictions using the best model."""
@@ -528,27 +690,32 @@ class ModelEnsemble:
         return best_model.predict(X, threshold)
     
     def save_all_models(self, save_dir: str) -> Dict[str, str]:
-        """Save all trained models."""
+        """Save all trained models in organized structure."""
         model_paths = {}
         
         for name, model in self.models.items():
             if model.model is not None:  # Only save trained models
-                model_path = model.save_model(os.path.join(save_dir, 'models'))
+                model_path = model.save_model(save_dir)  # save_dir is the run directory
                 model_paths[name] = model_path
         
         return model_paths
     
     def save_results(self, save_dir: str, run_id: str):
-        """Save ensemble results and metrics."""
-        results_dir = os.path.join(save_dir, 'validation', run_id)
-        os.makedirs(results_dir, exist_ok=True)
+        """Save ensemble results and metrics in organized structure."""
+        # Create organized run directory structure
+        run_dir = os.path.join(save_dir, 'runs', run_id)
+        metrics_dir = os.path.join(run_dir, 'metrics')
+        logs_dir = os.path.join(run_dir, 'logs')
         
-        # Save metrics
+        os.makedirs(metrics_dir, exist_ok=True)
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Save metrics in organized metrics subdirectory
         metrics_summary = {}
         for name, result in self.ensemble_results.items():
             metrics_summary[name] = result['metrics']
         
-        with open(os.path.join(results_dir, 'metrics.json'), 'w') as f:
+        with open(os.path.join(metrics_dir, 'metrics.json'), 'w') as f:
             json.dump(convert_numpy_types(metrics_summary), f, indent=2)
         
         # Save feature importances
@@ -556,7 +723,7 @@ class ModelEnsemble:
         for name, result in self.ensemble_results.items():
             feature_importances[name] = result['feature_importances']
         
-        with open(os.path.join(results_dir, 'feature_importances.json'), 'w') as f:
+        with open(os.path.join(metrics_dir, 'feature_importances.json'), 'w') as f:
             json.dump(convert_numpy_types(feature_importances), f, indent=2)
         
         # Save classification reports
@@ -564,7 +731,19 @@ class ModelEnsemble:
         for name, result in self.ensemble_results.items():
             classification_reports[name] = result['metrics']['classification_report']
         
-        with open(os.path.join(results_dir, 'classification_reports.json'), 'w') as f:
+        with open(os.path.join(metrics_dir, 'classification_reports.json'), 'w') as f:
             json.dump(convert_numpy_types(classification_reports), f, indent=2)
         
-        logger.info("Ensemble results saved", save_dir=results_dir)
+        # Save training summary
+        training_summary = {
+            'run_id': run_id,
+            'timestamp': datetime.now().isoformat(),
+            'best_model': self.best_model_name,
+            'models_trained': list(self.ensemble_results.keys()),
+            'best_model_metrics': self.ensemble_results[self.best_model_name]['metrics'] if self.best_model_name else None
+        }
+        
+        with open(os.path.join(run_dir, 'training_summary.json'), 'w') as f:
+            json.dump(convert_numpy_types(training_summary), f, indent=2)
+        
+        logger.info("Ensemble results saved in organized structure", run_dir=run_dir)

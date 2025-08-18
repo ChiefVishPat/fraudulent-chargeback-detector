@@ -18,7 +18,7 @@ This is a **learning project** designed to explore:
 ## 📊 Dataset Overview
 
 ### **Credit Card Fraud Dataset**
-- **Source**: https://www.kaggle.com/datasets/vaishnavisalgarkar/payroll-data
+- **Source**: https://www.kaggle.com/datasets/kartik2112/fraud-detection
 - **Time Period**: January 2019 - December 2020 (2 years)
 - **Training Data**: 1,296,675 transactions
 - **Test Data**: 555,719 transactions
